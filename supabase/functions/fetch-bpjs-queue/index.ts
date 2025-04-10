@@ -7,6 +7,7 @@ import * as crypto from "https://deno.land/std@0.177.0/crypto/mod.ts";
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-cons-id, x-timestamp, x-signature, user_key",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
 };
 
 // Helper function to convert string to Uint8Array
@@ -27,23 +28,28 @@ function hexToBytes(hex: string): Uint8Array {
 async function generateSignature(consId: string, timestamp: string, secretKey: string): Promise<string> {
   const message = consId + "&" + timestamp;
   
-  // Use HMAC with SHA256 for signature
-  const key = await crypto.subtle.importKey(
-    "raw",
-    stringToBytes(secretKey),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-  
-  const signatureBuffer = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    stringToBytes(message)
-  );
-  
-  // Convert the signature to base64
-  return btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
+  try {
+    // Use HMAC with SHA256 for signature
+    const key = await crypto.subtle.importKey(
+      "raw",
+      stringToBytes(secretKey),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    
+    const signatureBuffer = await crypto.subtle.sign(
+      "HMAC",
+      key,
+      stringToBytes(message)
+    );
+    
+    // Convert the signature to base64
+    return btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
+  } catch (error) {
+    console.error("Error generating signature:", error);
+    throw new Error("Failed to generate signature");
+  }
 }
 
 // Decrypt BPJS API response

@@ -99,12 +99,31 @@ const mockData: BpjsApiResponse = {
   }
 };
 
+// Configuration for API endpoints
+interface ApiConfig {
+  supabaseUrl: string;
+  localUrl: string;
+  isLocalDevelopment: boolean;
+}
+
+const apiConfig: ApiConfig = {
+  supabaseUrl: "https://kwfpqxobbwbmhlxhisuo.supabase.co/functions/v1/fetch-bpjs-queue",
+  localUrl: "http://localhost:54321/functions/v1/fetch-bpjs-queue",
+  // Set to true for local development, false for production
+  isLocalDevelopment: false // Change this manually when needed
+};
+
 // Use the edge function to fetch data from BPJS API
 export const fetchQueueByDate = async (date: string): Promise<BpjsApiResponse> => {
   try {
+    // Determine which URL to use based on environment
+    const apiUrl = apiConfig.isLocalDevelopment ? apiConfig.localUrl : apiConfig.supabaseUrl;
+    
+    console.log(`Calling edge function at: ${apiUrl}`);
+    
     // Call our Supabase edge function
     const response = await fetch(
-      "https://kwfpqxobbwbmhlxhisuo.supabase.co/functions/v1/fetch-bpjs-queue",
+      apiUrl,
       {
         method: "POST",
         headers: {
