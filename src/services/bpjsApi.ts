@@ -110,7 +110,7 @@ const apiConfig: ApiConfig = {
   supabaseUrl: "https://kwfpqxobbwbmhlxhisuo.supabase.co/functions/v1/fetch-bpjs-queue",
   localUrl: "http://localhost:54321/functions/v1/fetch-bpjs-queue",
   // Set to true for local development, false for production
-  isLocalDevelopment: false // Change this manually when needed
+  isLocalDevelopment: true // Changed to true for local testing
 };
 
 // Use the edge function to fetch data from BPJS API
@@ -133,12 +133,24 @@ export const fetchQueueByDate = async (date: string): Promise<BpjsApiResponse> =
       }
     );
 
+    // Get the full text response for debugging
+    const responseText = await response.text();
+    console.log(`Edge function response status: ${response.status}`);
+    console.log(`Edge function response: ${responseText.substring(0, 500)}${responseText.length > 500 ? '...' : ''}`);
+    
     if (!response.ok) {
-      console.error("Error calling BPJS API via edge function:", await response.text());
+      console.error("Error calling BPJS API via edge function:", responseText);
       throw new Error(`Edge function error: ${response.status}`);
     }
 
-    const data = await response.json();
+    let data;
+    try {
+      // Parse the response as JSON
+      data = JSON.parse(responseText);
+    } catch (error) {
+      console.error("Failed to parse edge function response as JSON:", error);
+      throw new Error("Invalid JSON response from edge function");
+    }
     
     // Return the response if it has the expected structure
     if (data.response && data.metadata) {

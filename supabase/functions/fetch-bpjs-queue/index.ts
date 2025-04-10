@@ -28,6 +28,9 @@ function hexToBytes(hex: string): Uint8Array {
 async function generateSignature(consId: string, timestamp: string, secretKey: string): Promise<string> {
   const message = consId + "&" + timestamp;
   
+  console.log(`Generating signature with consId: ${consId}, timestamp: ${timestamp}`);
+  console.log(`Secret key length: ${secretKey.length}`);
+  
   try {
     // Use HMAC with SHA256 for signature
     const key = await crypto.subtle.importKey(
@@ -45,10 +48,12 @@ async function generateSignature(consId: string, timestamp: string, secretKey: s
     );
     
     // Convert the signature to base64
-    return btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
+    const signature = btoa(String.fromCharCode(...new Uint8Array(signatureBuffer)));
+    console.log(`Signature generated successfully: ${signature.substring(0, 10)}...`);
+    return signature;
   } catch (error) {
     console.error("Error generating signature:", error);
-    throw new Error("Failed to generate signature");
+    throw new Error(`Failed to generate signature: ${error.message}`);
   }
 }
 
@@ -101,6 +106,9 @@ serve(async (req) => {
     const BPJS_SECRET_KEY = Deno.env.get("BPJS_SECRET_KEY") || "";
     const BPJS_USER_KEY = Deno.env.get("BPJS_USER_KEY") || "";
     
+    // Log environment variables presence (but not their values for security)
+    console.log(`BPJS credentials check - CONS_ID exists: ${!!BPJS_CONS_ID}, SECRET_KEY exists: ${!!BPJS_SECRET_KEY}, USER_KEY exists: ${!!BPJS_USER_KEY}`);
+    
     if (!BPJS_CONS_ID || !BPJS_SECRET_KEY || !BPJS_USER_KEY) {
       return new Response(
         JSON.stringify({ error: "Missing BPJS API credentials" }),
@@ -126,67 +134,108 @@ serve(async (req) => {
     // Generate timestamp (UNIX timestamp in milliseconds)
     const timestamp = new Date().getTime().toString();
     
-    // Generate signature
-    const signature = await generateSignature(BPJS_CONS_ID, timestamp, BPJS_SECRET_KEY);
-    
-    // Prepare request headers
-    const headers = {
-      "x-cons-id": BPJS_CONS_ID,
-      "x-timestamp": timestamp,
-      "x-signature": signature,
-      "user_key": BPJS_USER_KEY,
-      "Content-Type": "application/json",
-    };
-    
-    // Make the API call to BPJS
-    const apiUrl = `https://apijkn.bpjs-kesehatan.go.id/antreanrs/antrean/pendaftaran/tanggal/${date}`;
-    console.log(`Fetching data from ${apiUrl}`);
-    
-    const response = await fetch(apiUrl, {
-      method: "GET",
-      headers: headers,
-    });
-    
-    if (!response.ok) {
-      console.error(`API error: ${response.status} ${response.statusText}`);
+    try {
+      // Generate signature
+      const signature = await generateSignature(BPJS_CONS_ID, timestamp, BPJS_SECRET_KEY);
+      
+      // Prepare request headers
+      const headers = {
+        "x-cons-id": BPJS_CONS_ID,
+        "x-timestamp": timestamp,
+        "x-signature": signature,
+        "user_key": BPJS_USER_KEY,
+        "Content-Type": "application/json",
+      };
+      
+      // Make the API call to BPJS
+      const apiUrl = `https://apijkn.bpjs-kesehatan.go.id/antreanrs/antrean/pendaftaran/tanggal/${date}`;
+      console.log(`Fetching data from ${apiUrl}`);
+      
+      const response = await fetch(apiUrl, {
+        method: "GET",
+        headers: headers,
+      });
+      
+      // Get response status and body for detailed error info
+      const responseBody = await response.text();
+      
+      if (!response.ok) {
+        console.error(`API error: ${response.status} ${response.statusText}`);
+        console.error(`Response body: ${responseBody}`);
+        return new Response(
+          JSON.stringify({ 
+            error: `BPJS API error: ${response.status} ${response.statusText}`,
+            details: responseBody
+          }),
+          {
+            status: response.status,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+      
+      // Try to parse the response body
+      let encryptedData;
+      try {
+        encryptedData = JSON.parse(responseBody);
+        console.log("API response metadata:", encryptedData.metadata);
+      } catch (error) {
+        console.error("Invalid JSON response from API:", error);
+        return new Response(
+          JSON.stringify({ error: "Invalid response format from BPJS API", body: responseBody }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+      
+      // Check if we have the expected response structure
+      if (!encryptedData.response) {
+        console.error("Missing 'response' field in API response");
+        return new Response(
+          JSON.stringify({ error: "Missing 'response' field in API response", body: encryptedData }),
+          {
+            status: 500,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          }
+        );
+      }
+      
+      // Decrypt the response
+      console.log("Encrypted response received, attempting decryption");
+      const decryptedData = await decryptResponse(encryptedData.response, BPJS_CONS_ID, BPJS_SECRET_KEY);
+      
+      // Combine metadata with decrypted data
+      const result = {
+        response: decryptedData,
+        metadata: encryptedData.metadata
+      };
+      
+      console.log("Successfully decrypted and processed the API response");
+      
+      // Return the decrypted data
       return new Response(
-        JSON.stringify({ 
-          error: `BPJS API error: ${response.status} ${response.statusText}`,
-          details: await response.text()
-        }),
+        JSON.stringify(result),
         {
-          status: response.status,
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        }
+      );
+      
+    } catch (error) {
+      console.error("Signature or API call error:", error);
+      return new Response(
+        JSON.stringify({ error: `Signature or API call error: ${error.message}` }),
+        {
+          status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         }
       );
     }
     
-    // Get the encrypted response
-    const encryptedData = await response.json();
-    console.log("Encrypted response received, attempting decryption");
-    
-    // Decrypt the response
-    const decryptedData = await decryptResponse(encryptedData.response, BPJS_CONS_ID, BPJS_SECRET_KEY);
-    
-    // Combine metadata with decrypted data
-    const result = {
-      response: decryptedData,
-      metadata: encryptedData.metadata
-    };
-    
-    console.log("Successfully decrypted and processed the API response");
-    
-    // Return the decrypted data
-    return new Response(
-      JSON.stringify(result),
-      {
-        status: 200,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      }
-    );
-    
   } catch (error) {
-    console.error("Error:", error);
+    console.error("General error:", error);
     return new Response(
       JSON.stringify({ error: error.message || "Unknown error occurred" }),
       {
