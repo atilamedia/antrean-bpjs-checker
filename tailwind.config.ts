@@ -1,3 +1,4 @@
+
 import type { Config } from "tailwindcss";
 
 export default {
@@ -61,6 +62,20 @@ export default {
 					'accent-foreground': 'hsl(var(--sidebar-accent-foreground))',
 					border: 'hsl(var(--sidebar-border))',
 					ring: 'hsl(var(--sidebar-ring))'
+				},
+				medical: {
+					blue: '#2C7CBF',
+					lightBlue: '#C5E0F5',
+					green: '#50A16C',
+					lightGreen: '#E6F3EB',
+					red: '#E15759',
+					gray: '#F5F7FA',
+				},
+				status: {
+					complete: '#50A16C',  // Green for completed appointments
+					waiting: '#F9A03F',   // Orange for waiting
+					pending: '#2C7CBF',    // Blue for pending
+					missed: '#E15759',     // Red for missed appointments
 				}
 			},
 			borderRadius: {
@@ -84,11 +99,16 @@ export default {
 					to: {
 						height: '0'
 					}
+				},
+				'pulse-subtle': {
+					'0%, 100%': { opacity: '1' },
+					'50%': { opacity: '0.7' },
 				}
 			},
 			animation: {
 				'accordion-down': 'accordion-down 0.2s ease-out',
-				'accordion-up': 'accordion-up 0.2s ease-out'
+				'accordion-up': 'accordion-up 0.2s ease-out',
+				'pulse-subtle': 'pulse-subtle 2s cubic-bezier(0.4, 0, 0.6, 1) infinite'
 			}
 		}
 	},
