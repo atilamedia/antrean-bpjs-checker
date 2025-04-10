@@ -1,1 +1,5 @@
+
 project_id = "kwfpqxobbwbmhlxhisuo"
+
+[functions.fetch-bpjs-queue]
+verify_jwt = false

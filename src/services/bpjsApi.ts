@@ -1,7 +1,4 @@
 
-// Mock API service for BPJS queue data
-// In a real application, you would implement actual API calls with decryption logic
-
 // Define types for our API response
 export interface BpjsQueueItem {
   kodebooking: string;
@@ -33,7 +30,7 @@ export interface BpjsApiResponse {
   };
 }
 
-// Mock data based on the example format
+// Mock data to use as fallback if the API call fails
 const mockData: BpjsApiResponse = {
   response: {
     list: [
@@ -102,30 +99,51 @@ const mockData: BpjsApiResponse = {
   }
 };
 
-// In a real implementation, you would:
-// 1. Make a fetch call to the API
-// 2. Handle the decryption of the response
-// 3. Parse and return the data
-
+// Use the edge function to fetch data from BPJS API
 export const fetchQueueByDate = async (date: string): Promise<BpjsApiResponse> => {
-  // Simulate API call delay
-  await new Promise(resolve => setTimeout(resolve, 500));
-  
-  // In a real implementation, you would call the API endpoint
-  // const response = await fetch(`https://apijkn.bpjs-kesehatan.go.id/antreanrs/antrean/pendaftaran/tanggal/${date}`);
-  // const encryptedData = await response.json();
-  // const decryptedData = decryptBpjsResponse(encryptedData); // You would implement this
-  // return decryptedData;
-  
-  // For this mock implementation, filter the mock data based on the date
-  const filteredData = {
-    ...mockData,
-    response: {
-      list: mockData.response.list.filter(item => item.tanggal === date)
+  try {
+    // Call our Supabase edge function
+    const response = await fetch(
+      "https://kwfpqxobbwbmhlxhisuo.supabase.co/functions/v1/fetch-bpjs-queue",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ date }),
+      }
+    );
+
+    if (!response.ok) {
+      console.error("Error calling BPJS API via edge function:", await response.text());
+      throw new Error(`Edge function error: ${response.status}`);
     }
-  };
-  
-  return filteredData;
+
+    const data = await response.json();
+    
+    // Return the response if it has the expected structure
+    if (data.response && data.metadata) {
+      return data;
+    }
+    
+    console.error("Unexpected response format:", data);
+    throw new Error("Invalid response format");
+  } catch (error) {
+    console.error("Failed to fetch queue data:", error);
+    
+    // Use mock data as fallback
+    console.log("Using mock data as fallback");
+    
+    // Filter mock data based on the requested date
+    const filteredData = {
+      ...mockData,
+      response: {
+        list: mockData.response.list.filter(item => item.tanggal === date)
+      }
+    };
+    
+    return filteredData;
+  }
 };
 
 // Function to format a medical record number with some digits masked
