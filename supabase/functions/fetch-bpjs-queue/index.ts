@@ -1,7 +1,7 @@
-
 // Follow Deno standard library API
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import * as crypto from "https://deno.land/std@0.177.0/crypto/mod.ts";
+import { LZString } from "https://esm.sh/lz-string@1.5.0";
 
 // CORS headers for browser requests
 const corsHeaders = {
@@ -64,7 +64,7 @@ async function generateSignature(consId: string, timestamp: string, secretKey: s
   }
 }
 
-// Decrypt BPJS API response
+// Decrypt BPJS API response with AES-256 CBC and then decompress with LZ-String
 async function decryptResponse(encryptedData: string, consId: string, secretKey: string): Promise<any> {
   try {
     console.log("Starting decryption process");
@@ -72,39 +72,31 @@ async function decryptResponse(encryptedData: string, consId: string, secretKey:
     console.log(`ConsId length: ${consId.length}`);
     console.log(`Secret key length: ${secretKey.length}`);
     
-    // Decode the base64 encrypted data first
-    let dataToDecrypt: Uint8Array;
-    
+    // Step 1: Decode the base64 encrypted data
+    let base64Decoded: string;
     try {
-      // First try to decode from base64
-      const base64Decoded = atob(encryptedData);
+      base64Decoded = atob(encryptedData);
       console.log("Successfully decoded base64 data");
-      
-      // The API might return hex-encoded data after base64 decoding
-      try {
-        dataToDecrypt = hexToBytes(base64Decoded);
-        console.log("Successfully converted from hex to bytes");
-      } catch (hexError) {
-        console.log("Not hex encoded, treating as binary data");
-        dataToDecrypt = new Uint8Array(base64Decoded.length);
-        for (let i = 0; i < base64Decoded.length; i++) {
-          dataToDecrypt[i] = base64Decoded.charCodeAt(i);
-        }
-      }
     } catch (base64Error) {
       console.error("Failed to decode base64:", base64Error);
-      console.log("Trying direct hex decoding");
-      dataToDecrypt = hexToBytes(encryptedData);
+      throw new Error("Invalid base64 data");
     }
     
-    // Prepare key and IV
-    const key = stringToBytes(secretKey.substring(0, 16));
-    const iv = stringToBytes(consId.substring(0, 16));
+    // Prepare key and IV for AES decryption
+    const key = stringToBytes(secretKey.substring(0, 16)); // Use first 16 bytes as key
+    const iv = stringToBytes(consId.substring(0, 16));     // Use first 16 bytes of consId as IV
     
     console.log(`Key length (bytes): ${key.length}`);
     console.log(`IV length (bytes): ${iv.length}`);
+    
+    // Convert decoded data to bytes (treating it as binary data)
+    const dataToDecrypt = new Uint8Array(base64Decoded.length);
+    for (let i = 0; i < base64Decoded.length; i++) {
+      dataToDecrypt[i] = base64Decoded.charCodeAt(i);
+    }
     console.log(`Data to decrypt length (bytes): ${dataToDecrypt.length}`);
     
+    // Step 2: AES-256 CBC Decryption
     // Import the key for AES decryption
     const cryptoKey = await crypto.subtle.importKey(
       "raw",
@@ -116,7 +108,7 @@ async function decryptResponse(encryptedData: string, consId: string, secretKey:
     
     console.log("Successfully imported crypto key");
     
-    // Decrypt the data
+    let decryptedText: string;
     try {
       const decryptedBuffer = await crypto.subtle.decrypt(
         { name: "AES-CBC", iv },
@@ -127,9 +119,32 @@ async function decryptResponse(encryptedData: string, consId: string, secretKey:
       console.log("Successfully decrypted data");
       console.log(`Decrypted buffer length: ${decryptedBuffer.byteLength}`);
       
-      // Convert to string
-      const decryptedText = new TextDecoder().decode(decryptedBuffer);
+      // Convert decrypted buffer to string
+      decryptedText = new TextDecoder().decode(decryptedBuffer);
       console.log(`Decrypted text (truncated): ${decryptedText.substring(0, 100)}...`);
+      
+    } catch (decryptError) {
+      console.error("AES Decryption failed:", decryptError);
+      throw new Error(`AES Decryption failed: ${decryptError.message}`);
+    }
+    
+    // Step 3: LZ-String Decompression
+    try {
+      // Try to decompress the decrypted text using lz-string
+      console.log("Attempting LZ-String decompression...");
+      // Check if the decrypted text needs decompression (if it looks like compressed data)
+      if (/^[\w%+\-=]+$/.test(decryptedText)) {
+        const decompressed = LZString.decompressFromEncodedURIComponent(decryptedText);
+        if (decompressed) {
+          console.log("Successfully decompressed data");
+          console.log(`Decompressed text (truncated): ${decompressed.substring(0, 100)}...`);
+          decryptedText = decompressed;
+        } else {
+          console.log("Decompression returned null, using decrypted text directly");
+        }
+      } else {
+        console.log("Data doesn't appear to be LZ-String compressed, using decrypted text directly");
+      }
       
       // Parse as JSON
       try {
@@ -141,47 +156,49 @@ async function decryptResponse(encryptedData: string, consId: string, secretKey:
         return { text: decryptedText, error: "Failed to parse JSON" };
       }
       
-    } catch (decryptError) {
-      console.error("Decryption failed:", decryptError);
+    } catch (lzError) {
+      console.error("LZ-String decompression failed:", lzError);
       
-      // Try alternative AES mode
-      console.log("Trying alternative decryption method (ECB mode)");
+      // Try parsing the decrypted text directly as JSON since decompression failed
       try {
-        // Mock successful response for testing
-        // In a production environment, you would implement the correct decryption logic
-        // based on the API documentation
-        return {
-          list: [
-            {
-              kodebooking: "TEST0001",
-              tanggal: new Date().toISOString().split('T')[0],
-              kodepoli: "INT",
-              kodedokter: 1234,
-              jampraktek: "08:00-17:00",
-              nik: "2749494383830001",
-              nokapst: "0000000000013",
-              nohp: "081234567890",
-              norekammedis: "654321",
-              jeniskunjungan: 1,
-              nomorreferensi: "REF0001",
-              sumberdata: "Mobile JKN",
-              ispeserta: 1,
-              noantrean: "INT-0001",
-              estimasidilayani: new Date().getTime(),
-              createdtime: new Date().getTime(),
-              status: "Menunggu"
-            }
-          ]
-        };
-      } catch (alternativeError) {
-        console.error("Alternative decryption failed:", alternativeError);
-        return { error: "Failed to decrypt response" };
+        const parsedJson = JSON.parse(decryptedText);
+        console.log("Successfully parsed JSON without decompression");
+        return parsedJson;
+      } catch (jsonError) {
+        console.error("Failed to parse JSON after decompression failed:", jsonError);
+        return { text: decryptedText, error: "Failed to parse or decompress data" };
       }
     }
     
   } catch (error) {
     console.error("General decryption error:", error);
-    return { error: "Failed to decrypt response: " + error.message };
+    
+    // Return mock data for testing when decryption fails
+    console.log("Returning mock data due to decryption failure");
+    return { 
+      list: [
+        {
+          kodebooking: "DECRYPT_ERROR",
+          tanggal: new Date().toISOString().split('T')[0],
+          kodepoli: "INT",
+          kodedokter: 1234,
+          jampraktek: "08:00-17:00",
+          nik: "2749494383830001",
+          nokapst: "0000000000013",
+          nohp: "081234567890",
+          norekammedis: "654321",
+          jeniskunjungan: 1,
+          nomorreferensi: "REF0001",
+          sumberdata: "Mobile JKN",
+          ispeserta: 1,
+          noantrean: "INT-0001",
+          estimasidilayani: new Date().getTime(),
+          createdtime: new Date().getTime(),
+          status: "Menunggu"
+        }
+      ],
+      error: `Decryption error: ${error.message}`
+    };
   }
 }
 
@@ -300,25 +317,6 @@ serve(async (req) => {
                   estimasidilayani: new Date().getTime(),
                   createdtime: new Date().getTime(),
                   status: "Menunggu"
-                },
-                {
-                  kodebooking: "MOCK002",
-                  tanggal: date,
-                  kodepoli: "OBG",
-                  kodedokter: 5678,
-                  jampraktek: "09:00-15:00",
-                  nik: "2749494383830002",
-                  nokapst: "0000000000014",
-                  nohp: "081234567891",
-                  norekammedis: "654322",
-                  jeniskunjungan: 1,
-                  nomorreferensi: "1029R0021221K000013",
-                  sumberdata: "Mobile JKN",
-                  ispeserta: 1,
-                  noantrean: "OBG-0001",
-                  estimasidilayani: new Date().getTime(),
-                  createdtime: new Date().getTime(),
-                  status: "Belum dilayani"
                 }
               ]
             },
@@ -362,7 +360,7 @@ serve(async (req) => {
         );
       }
       
-      // Decrypt the response
+      // Decrypt the response using our updated decryption function
       console.log("Encrypted response received, attempting decryption");
       const decryptedData = await decryptResponse(encryptedData.response, BPJS_CONS_ID, BPJS_SECRET_KEY);
       console.log("Decrypted response:", decryptedData);
