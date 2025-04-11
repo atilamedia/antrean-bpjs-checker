@@ -213,7 +213,7 @@ serve(async (req) => {
   }
   
   try {
-    // Get environment variables
+    // Get environment variables - use Deno.env.get
     const BPJS_CONS_ID = Deno.env.get("BPJS_CONS_ID") || "";
     const BPJS_SECRET_KEY = Deno.env.get("BPJS_SECRET_KEY") || "";
     const BPJS_USER_KEY = Deno.env.get("BPJS_USER_KEY") || "";
@@ -436,4 +436,3 @@ serve(async (req) => {
     );
   }
 });
-

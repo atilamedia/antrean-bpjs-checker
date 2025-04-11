@@ -13,7 +13,7 @@ export interface BpjsQueueItem {
   jeniskunjungan: number;
   nomorreferensi: string;
   sumberdata: string;
-  ispeserta: number;
+  ispeserta: number | boolean;
   noantrean: string;
   estimasidilayani: number;
   createdtime: number;
@@ -110,7 +110,7 @@ const apiConfig: ApiConfig = {
   supabaseUrl: "https://kwfpqxobbwbmhlxhisuo.supabase.co/functions/v1/fetch-bpjs-queue",
   localUrl: "http://localhost:54321/functions/v1/fetch-bpjs-queue",
   // Set to true for local development, false for production
-  isLocalDevelopment: true // For local testing
+  isLocalDevelopment: false // Changed to false for production
 };
 
 // Use the edge function to fetch data from BPJS API
@@ -158,17 +158,38 @@ export const fetchQueueByDate = async (date: string): Promise<BpjsApiResponse> =
       throw new Error(data.response.error);
     }
     
+    // Handle the case where data.response is an array instead of an object with a list property
+    if (data.response && Array.isArray(data.response)) {
+      console.log("Response is an array, converting to expected format");
+      data = {
+        ...data,
+        response: { 
+          list: data.response 
+        }
+      };
+    }
+    
     // Handle the case where data.response.list is undefined
     if (data.response && !data.response.list) {
       console.error("Response missing list property:", data.response);
       
-      // Create a valid response structure
-      data = {
-        ...data,
-        response: { 
-          list: data.response.list || [] 
-        }
-      };
+      // If response itself is an object but not an array, convert it to the expected format
+      if (typeof data.response === 'object' && !Array.isArray(data.response)) {
+        data = {
+          ...data,
+          response: { 
+            list: [data.response] 
+          }
+        };
+      } else {
+        // Create a valid response structure with an empty list
+        data = {
+          ...data,
+          response: { 
+            list: [] 
+          }
+        };
+      }
     }
     
     // Return the response if it has the expected structure
@@ -244,6 +265,10 @@ export const getStatusColor = (status: string): string => {
       return 'bg-status-waiting';
     case 'belum dilayani':
       return 'bg-status-pending';
+    case 'sedang dilayani':
+      return 'bg-status-inprogress';
+    case 'batal':
+      return 'bg-status-cancelled';
     default:
       return 'bg-gray-400';
   }
