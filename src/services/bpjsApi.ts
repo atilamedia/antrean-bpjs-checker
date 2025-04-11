@@ -110,7 +110,7 @@ const apiConfig: ApiConfig = {
   supabaseUrl: "https://kwfpqxobbwbmhlxhisuo.supabase.co/functions/v1/fetch-bpjs-queue",
   localUrl: "http://localhost:54321/functions/v1/fetch-bpjs-queue",
   // Set to true for local development, false for production
-  isLocalDevelopment: true // Changed to true for local testing
+  isLocalDevelopment: true // For local testing
 };
 
 // Use the edge function to fetch data from BPJS API
@@ -150,6 +150,25 @@ export const fetchQueueByDate = async (date: string): Promise<BpjsApiResponse> =
     } catch (error) {
       console.error("Failed to parse edge function response as JSON:", error);
       throw new Error("Invalid JSON response from edge function");
+    }
+    
+    // Check for error in response
+    if (data.response && data.response.error) {
+      console.error("API error in response:", data.response.error);
+      throw new Error(data.response.error);
+    }
+    
+    // Handle the case where data.response.list is undefined
+    if (data.response && !data.response.list) {
+      console.error("Response missing list property:", data.response);
+      
+      // Create a valid response structure
+      data = {
+        ...data,
+        response: { 
+          list: data.response.list || [] 
+        }
+      };
     }
     
     // Return the response if it has the expected structure
