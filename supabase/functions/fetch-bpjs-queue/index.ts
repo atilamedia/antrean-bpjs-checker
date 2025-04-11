@@ -1,7 +1,8 @@
+
 // Follow Deno standard library API
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import * as crypto from "https://deno.land/std@0.177.0/crypto/mod.ts";
-import { LZString } from "https://esm.sh/lz-string@1.5.0";
+import LZString from "https://esm.sh/lz-string@1.5.0";
 
 // CORS headers for browser requests
 const corsHeaders = {
@@ -435,3 +436,4 @@ serve(async (req) => {
     );
   }
 });
+
